@@ -15,5 +15,5 @@ dependencies = []
 [project.scripts]
 patchproof = "patchproof.cli:main"
 
-[tool.setuptools]
-packages = ["patchproof"]
+[tool.setuptools.packages.find]
+include = ["patchproof*"]
