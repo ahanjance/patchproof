@@ -109,7 +109,7 @@ def _run(
     except ConfigError as exc:
         message = str(exc)
         print(f"patchproof: configuration error: {message}", file=sys.stderr)
-        report_path = _write_error_report(out_root, message)
+        report_path = _write_error_report(out_root, message, config_path)
         print(f"report: {report_path}")
         return 30
 
@@ -126,7 +126,9 @@ def _run(
     return int(report.verdict.exit_code)
 
 
-def _write_error_report(out_root: Path, message: str) -> Path:
+def _write_error_report(
+    out_root: Path, message: str, config_path: Path | None = None
+) -> Path:
     run_id = (
         datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         + "-"
@@ -144,7 +146,7 @@ def _write_error_report(out_root: Path, message: str) -> Path:
             "out_dir": str(run_dir),
         },
         "target": {},
-        "config_path": str(Path(out_root)),
+        "config_path": str(config_path) if config_path is not None else "",
         "config_sha256": "",
         "builds": [],
         "observations": [],
