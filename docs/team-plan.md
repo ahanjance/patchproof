@@ -58,12 +58,17 @@ runner, test matrix, verdict aggregation, JSON report, summary, CI pipeline.
 - ASan memory note: virtual address space is not limited because ASan reserves
   terabytes; release builds are limited.
 
-**Still to do with the team:**
+**Handoff boundary — nothing outstanding for Member 1:**
 
-- Wire Parts 2–4 analyzers into `pipeline.execute(analyzers=[...])`.
-- Add the real target configs and the delivery pipeline once targets are approved.
-- Keep the JSON schema stable; add fields, never rename existing ones.
-- Final integration: run all four scenarios and the unseen-patch drill.
+Part 1 is closed. The remaining integration work belongs to the authors and the
+delivery owner, not to Member 1:
+
+- **Member 2** wires `crash` into `pipeline.execute(analyzers=[...])` and adds
+  Target A's config to the delivery pipeline.
+- **Member 3** wires `correlation` into the same list and adds Target B's config.
+- **Member 4** owns the final delivery pipeline, the four scenarios and the
+  unseen-patch rehearsal.
+- Member 1 only provides advisory support on the frozen interface if asked.
 
 **Acceptance:** `python -m unittest` green; `examples/demo/run.sh --correct`
 exits 0 and `run.sh` exits 20; JSON contains versions, builds, observations,
@@ -92,6 +97,8 @@ mechanism, termination reporting, valid/boundary/invalid test corpus for Target 
 - Design and document the valid, boundary and invalid corpus for Target A,
   including the *different* input that defeats the incomplete patch.
 - Run every crashing input on **both** versions and **corresponding** builds.
+- Wire the analyzer into `pipeline.execute(analyzers=[...])` and add Target A's
+  config to the delivery pipeline.
 
 **Evidence contract:** every finding references the observations it classified:
 
@@ -134,7 +141,9 @@ the five statuses on Target B.
   - A newly observed crash does **not** prove the patch caused it.
 - Prove that a caller change (e.g. a length check) can explain a crash in a
   callee; include this case in tests.
-- Build Target B's four versions and reference tests with Member 1.
+- Build Target B's four versions and reference tests.
+- Wire the analyzer into `pipeline.execute(analyzers=[...])` and add Target B's
+  config to the delivery pipeline.
 - Never use a patch filename, branch name or known patch ID to decide anything.
 
 **Acceptance:** synthetic diff/stack fixtures plus one real target; each status
@@ -164,6 +173,8 @@ binary hardening, documentation, final packaging.
   every function is protected.
 - `docs/scenarios.md`: how each of the four versions is built, which input
   distinguishes it, and the expected exit code.
+- Own the final delivery pipeline: run all four scenarios on both targets and
+  the unseen-patch rehearsal.
 - Final delivery bundle: code, configs, exact versions, tests, reproducers,
   reports, pipeline file, standalone run guide.
 
@@ -193,8 +204,8 @@ evidence.
 |---|---|
 | M0 (week 1) | Targets + CVE/patch + reference criteria approved by instructor; Part 1 interface frozen |
 | M1 (week 2) | Member 2 crash analyzer works on Target A; Member 3 diff/stack mapping works on fixtures; Member 4 reproducer on one crash |
-| M2 (week 3) | All analyzers plugged in; four scenarios green on both targets; JSON complete |
-| M3 (week 4) | Minimisation + regression generation + hardening complete; unseen-patch rehearsal; docs and individual defense rehearsal |
+| M2 (week 3) | Member 2/3 wire their own analyzers; Member 4 owns the delivery pipeline; four scenarios green on both targets; JSON complete |
+| M3 (week 4) | Minimisation + regression generation + hardening complete; Member 4 runs the unseen-patch rehearsal; docs and individual defense rehearsal |
 
 ## Defense preparation (10 points, individual)
 
