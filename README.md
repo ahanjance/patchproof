@@ -16,7 +16,7 @@ It builds both git versions, runs the declared valid/boundary/invalid test suite
 
 | Part | Owner | Scope | Status |
 |---|---|---|---|
-| **1. Platform & CI/CD** | Member 1 | Config, git versions, builds, sandboxed runner, JSON, exit codes, pipeline | **Complete** (this repo) |
+| **1. Platform & CI/CD** | Member 1 | Config, git versions, builds, sandboxed runner, JSON, exit codes, CI entrypoint | **Complete** (this repo) |
 | **2. Dynamic analysis** | Member 2 | ASan/UBSan parsing, crash taxonomy, detection mechanism, boundary/invalid corpus | Planned |
 | **3. Patch correlation** | Member 3 | Diff hunks, stack symbolisation, Fixed/Incomplete/New/Regression/Inconclusive | Planned |
 | **4. Reproducibility & hardening** | Member 4 | Reproducer bundles, input minimisation, regression-test generation, ELF hardening | Planned |
@@ -88,7 +88,8 @@ patchproof/          tool package (stdlib only)
 tests/               53 stdlib unittest tests
 docs/                design, config, schema, team plan
 examples/demo/       runnable correct/regression demo
-.github/workflows/   CI for the tool itself
+ci/pipeline.sh       CI entrypoint (tests + both demo modes)
+ci/github-actions.yml  GitHub Actions template (copy to .github/workflows/)
 ```
 
 ## Design rules
