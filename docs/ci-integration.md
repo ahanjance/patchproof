@@ -3,6 +3,13 @@
 PatchProof is a normal command-line process: the pipeline decides from the exit
 code and stores the JSON report as an artifact.
 
+The vendor-neutral entrypoint is `ci/pipeline.sh`. GitHub blocks pushes of files
+under `.github/workflows/` unless the pushing credential has the `workflow`
+scope, so this repository ships the Actions file as
+[`ci/github-actions.yml`](../ci/github-actions.yml). Copy it to
+`.github/workflows/ci.yml` in the GitHub web UI, or push with a token that has
+the `workflow` scope.
+
 ## GitHub Actions
 
 ```yaml
