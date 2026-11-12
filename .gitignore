@@ -1,0 +1,22 @@
+# Build / run output
+patchproof-out/
+.patchproof/
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# C build artifacts from the demo
+examples/demo/**/app
+examples/demo/**/app-asan
+
+# Editors
+.vscode/
+.idea/
+.DS_Store
