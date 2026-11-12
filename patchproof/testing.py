@@ -30,7 +30,7 @@ def run_test(
         / "artifacts"
         / version
         / variant
-        / _safe_id.sub("_", test.id)[:80]
+        / _SAFE_ID.sub("_", test.id)[:80]
     )
     timeout = (
         test.timeout_seconds
