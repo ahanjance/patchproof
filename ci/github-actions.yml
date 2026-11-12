@@ -1,0 +1,32 @@
+# Template: copy to .github/workflows/ci.yml
+# GitHub requires the 'workflow' scope to push files under .github/workflows/.
+name: patchproof-ci
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  tests:
+    name: tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Unit and integration tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Correct patch must exit 0
+        run: bash examples/demo/run.sh --correct
+
+      - name: Regression patch must exit 20
+        run: bash examples/demo/run.sh
