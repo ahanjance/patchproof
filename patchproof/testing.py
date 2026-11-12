@@ -171,14 +171,17 @@ def _build_invocation(
             arg = arg.replace(key, value)
         argv.append(arg)
 
+    input_path = test.input_path
+    if test.input_mode != "none" and input_path is None:
+        return argv, None, f"test {test.id!r} has no input file"
+
     stdin_bytes: bytes | None = None
     try:
         if test.input_mode == "stdin":
-            assert test.input_path is not None
-            stdin_bytes = test.input_path.read_bytes()
+            assert input_path is not None
+            stdin_bytes = input_path.read_bytes()
         elif test.input_mode in {"file", "argv"} and not has_input_placeholder:
-            assert test.input_path is not None
-            argv.append(str(test.input_path))
+            argv.append(str(input_path))
     except OSError as exc:
         return argv, None, f"cannot read test input: {exc}"
 
