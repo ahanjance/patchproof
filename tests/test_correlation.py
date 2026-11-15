@@ -319,6 +319,49 @@ class SerializationTests(unittest.TestCase):
         self.assertEqual(findings[0].evidence["observations"][0]["test_id"], "bg-1")
         self.assertEqual(findings[0].evidence["diff_hunks"][0]["file"], "src/parser.c")
 
+    def test_analyzer_ignores_non_security_observations(self):
+        context = AnalysisContext(
+            config=None,
+            base_worktree=None,
+            patched_worktree=None,
+            diff="""diff --git a/src/parser.c b/src/parser.c
+--- a/src/parser.c
++++ b/src/parser.c
+@@ -5,2 +5,3 @@
+-  if (len <= 0) return 0;
++  if (len <= 0) return 1;
++  return 0;
+""",
+            observations=[
+                TestObservation(
+                    test_id="valid",
+                    kind="functional",
+                    version="base",
+                    variant="release",
+                    outcome="pass",
+                    expectation_met=True,
+                    exit_code=0,
+                    signal=None,
+                    timed_out=False,
+                    duration_seconds=0.1,
+                ),
+                TestObservation(
+                    test_id="valid",
+                    kind="functional",
+                    version="patched",
+                    variant="release",
+                    outcome="pass",
+                    expectation_met=True,
+                    exit_code=0,
+                    signal=None,
+                    timed_out=False,
+                    duration_seconds=0.1,
+                ),
+            ],
+            out_dir=None,
+        )
+        self.assertEqual(CorrelationAnalyzer().analyze(context), [])
+
     def test_missing_observation_refs_keep_result_inconclusive(self):
         finding = serialize_correlation_finding(
             finding_id="CORR-2",

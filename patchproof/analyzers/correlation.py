@@ -576,12 +576,19 @@ class CorrelationAnalyzer:
         if not context.diff:
             return []
 
+        relevant = [obs for obs in context.observations if obs.kind == "security"]
+        if not relevant:
+            return []
+
         findings: list[Finding] = []
         grouped: dict[str, list[TestObservation]] = {}
-        for observation in context.observations:
+        for observation in relevant:
             grouped.setdefault(observation.test_id, []).append(observation)
 
         for test_id, observations in grouped.items():
+            if not any(obs.outcome in {"crash", "timeout", "error"} for obs in observations):
+                continue
+
             observations_by_version = {obs.version: obs for obs in observations}
             base_obs = observations_by_version.get("base")
             patched_obs = observations_by_version.get("patched")
