@@ -9,6 +9,8 @@ that classification is implemented in later Part 3 steps.
 from __future__ import annotations
 
 import re
+import shutil
+import subprocess
 from dataclasses import dataclass
 
 _HUNK_RE = re.compile(
@@ -205,6 +207,111 @@ def extract_user_frames(report: str) -> list[NormalizedFrame]:
             )
         )
     return frames
+
+
+def symbolize_frames(
+    frames: list[NormalizedFrame],
+    binary_path: str,
+    *,
+    symbolizer: str | None = None,
+    runner=subprocess.run,
+) -> list[NormalizedFrame]:
+    """Resolve a frame's source file and line via addr2line/llvm-symbolizer.
+
+    If a frame already has a file and line, it is left alone. If the tool cannot
+    symbolise a frame, the original frame is preserved and the method returns the
+    same function metadata without raising.
+    """
+
+    if not frames or not binary_path:
+        return list(frames)
+
+    chosen = symbolizer or _detect_symbolizer()
+    if chosen is None:
+        return list(frames)
+
+    resolved: list[NormalizedFrame] = []
+    for frame in frames:
+        if frame.file is not None and frame.line is not None:
+            resolved.append(frame)
+            continue
+
+        address = _extract_address(frame.raw)
+        if not address:
+            resolved.append(frame)
+            continue
+
+        command = _symbolizer_command(chosen, binary_path, address)
+        if command is None:
+            resolved.append(frame)
+            continue
+
+        try:
+            completed = runner(command, capture_output=True, text=True, check=False)
+        except OSError:
+            resolved.append(frame)
+            continue
+
+        resolved_frame = _apply_symbolizer_result(frame, completed.stdout)
+        resolved.append(resolved_frame)
+
+    return resolved
+
+
+def _detect_symbolizer() -> str | None:
+    if shutil.which("addr2line"):
+        return "addr2line"
+    if shutil.which("llvm-symbolizer"):
+        return "llvm-symbolizer"
+    return None
+
+
+def _symbolizer_command(symbolizer: str, binary_path: str, address: str) -> list[str] | None:
+    if symbolizer == "addr2line":
+        return ["addr2line", "-f", "-C", "-e", binary_path, address]
+    if symbolizer == "llvm-symbolizer":
+        return ["llvm-symbolizer", "-e", binary_path, address]
+    return None
+
+
+def _extract_address(raw: str) -> str | None:
+    match = re.search(r"0x[0-9A-Fa-f]+", raw or "")
+    if not match:
+        return None
+    return match.group(0)
+
+
+def _apply_symbolizer_result(frame: NormalizedFrame, stdout: str) -> NormalizedFrame:
+    output = (stdout or "").strip()
+    if not output:
+        return frame
+
+    match = re.search(r"(?P<file>.+?):(?P<line>\d+)$", output)
+    if match:
+        file_value = match.group("file")
+        line_value = int(match.group("line"))
+        return NormalizedFrame(
+            function=frame.function,
+            file=file_value,
+            line=line_value,
+            raw=frame.raw,
+        )
+
+    # Some symbolizers return a function name on the first line and a file:line on
+    # the second. Accept the first resolved file:line pair in that case.
+    for candidate in output.splitlines():
+        match = re.search(r"(?P<file>.+?):(?P<line>\d+)$", candidate.strip())
+        if match:
+            file_value = match.group("file")
+            line_value = int(match.group("line"))
+            return NormalizedFrame(
+                function=frame.function,
+                file=file_value,
+                line=line_value,
+                raw=frame.raw,
+            )
+
+    return frame
 
 
 def _normalise_path(path: str) -> str:

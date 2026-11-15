@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import unittest
 
-from patchproof.analyzers.correlation import extract_user_frames, parse_diff
+from patchproof.analyzers.correlation import (
+    NormalizedFrame,
+    extract_user_frames,
+    parse_diff,
+    symbolize_frames,
+)
 
 
 class DiffParsingTests(unittest.TestCase):
@@ -80,6 +85,33 @@ new file mode 100644
 
     def test_extract_user_frames_handles_blank_report(self):
         self.assertEqual(extract_user_frames(""), [])
+
+    def test_symbolize_frames_uses_addr2line(self):
+        def fake_runner(command, capture_output, text, check):
+            self.assertEqual(command[:3], ["addr2line", "-f", "-C"])
+            self.assertEqual(command[-1], "0x1234")
+            return type(
+                "Completed",
+                (),
+                {"stdout": "src/parser.c:42\n"},
+            )()
+
+        frames = [
+            NormalizedFrame(
+                function="parse_header",
+                file=None,
+                line=None,
+                raw="#0 0x1234 in parse_header at src/parser.c:42",
+            )
+        ]
+        mapped = symbolize_frames(frames, "/tmp/app", symbolizer="addr2line", runner=fake_runner)
+        self.assertEqual(mapped[0].file, "src/parser.c")
+        self.assertEqual(mapped[0].line, 42)
+
+    def test_symbolize_frames_falls_back_gracefully(self):
+        frames = [NormalizedFrame(function="main", raw="#0 0x9999 in main")]
+        mapped = symbolize_frames(frames, "/tmp/app", symbolizer="addr2line", runner=lambda *args, **kwargs: (_ for _ in ()).throw(OSError("missing tool")))
+        self.assertEqual(mapped, frames)
 
 
 if __name__ == "__main__":
