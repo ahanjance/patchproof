@@ -17,8 +17,8 @@ It builds both git versions, runs the declared valid/boundary/invalid test suite
 | Part | Owner | Scope | Status |
 |---|---|---|---|
 | **1. Platform & CI/CD** | Member 1 | Config, git versions, builds, sandboxed runner, JSON, exit codes, CI entrypoint | **Complete** (this repo) |
-| **2. Dynamic analysis** | Member 2 | ASan/UBSan parsing, crash taxonomy, detection mechanism, boundary/invalid corpus | Planned |
-| **3. Patch correlation** | Member 3 | Diff hunks, stack symbolisation, Fixed/Incomplete/New/Regression/Inconclusive | Planned |
+| **2. Dynamic analysis** | Member 2 | ASan/UBSan parsing, crash taxonomy, detection mechanism, boundary/invalid corpus | **Complete** |
+| **3. Patch correlation** | Member 3 | Diff hunks, stack symbolisation, Fixed/Incomplete/New/Regression/Inconclusive | **Complete** |
 | **4. Reproducibility & hardening** | Member 4 | Reproducer bundles, input minimisation, regression-test generation, ELF hardening | Planned |
 
 The full split, interfaces and deadlines are in [`docs/team-plan.md`](docs/team-plan.md).
