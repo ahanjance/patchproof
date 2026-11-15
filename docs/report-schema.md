@@ -171,6 +171,25 @@ lists its exact tuple in `evidence.observations`:
 An unclassified `crash` or `timeout` observation forces exit 40. This is how the
 tool enforces "a crash alone does not confirm a vulnerability".
 
+### Crash analyzer evidence (`analyzer: "crash"`)
+
+| Key | Meaning |
+|---|---|
+| `signature` | `error_type` + top 3 user frames (`|`-joined); no addresses or test names |
+| `error_type` | e.g. `heap-buffer-overflow`, `stack-buffer-overflow`, `use-after-free`, `double-free`, `null-dereference`, `division-by-zero`, `stack-smashing`, `timeout` |
+| `mechanisms` | Who detected it: `asan`, `ubsan`, `stack-canary`, `fortify`, `glibc-malloc`, `os-signal`, `timeout`, `resource-limit` |
+| `access` | ASan access, e.g. `WRITE of size 1` |
+| `frames`, `location` | User frames (sanitizer runtime frames dropped) and the top frame's `file:line` |
+| `report_excerpt` | First 40 lines of the sanitizer/runtime report |
+| `executions[]` | Per observation: `error_type`, `mechanism`, `confirmed` and `termination` (`exit_code`, `signal`, `timed_out`, `stdout_path`, `stderr_path`) |
+
+Status: same signature on base and patched → `incomplete`; base only → `fixed`;
+patched only → `new`. Only sanitizer, canary, FORTIFY or glibc-malloc reports
+confirm a finding; a bare signal, timeout or resource limit stays
+`inconclusive`. A release-build stop joins the sanitized finding of the same
+test and version. If security tests exist but none reproduces a confirmed error
+on base, `SEC-base-not-reproduced` forces exit 40.
+
 ## `verdict`
 
 ```json
