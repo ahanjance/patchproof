@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from patchproof.analyzers.correlation import parse_diff
+from patchproof.analyzers.correlation import extract_user_frames, parse_diff
 
 
 class DiffParsingTests(unittest.TestCase):
@@ -66,6 +66,20 @@ new file mode 100644
         self.assertEqual(len(files), 1)
         self.assertEqual(files[0].path, "src/newfile.c")
         self.assertEqual(files[0].hunks[0].new_range, (1, 3))
+
+    def test_extract_user_frames_skips_runtime_frames(self):
+        report = """==123== ERROR: AddressSanitizer: heap-buffer-overflow in /tmp/test
+#0 0x111111 in parse_header at src/parser.c:42
+#1 0x222222 in main at src/main.c:10
+#2 0x333333 in __libc_start_main in /usr/lib/libc.so.6
+"""
+        frames = extract_user_frames(report)
+        self.assertEqual([f.function for f in frames], ["parse_header", "main"])
+        self.assertEqual(frames[0].line, 42)
+        self.assertEqual(frames[1].file, "src/main.c")
+
+    def test_extract_user_frames_handles_blank_report(self):
+        self.assertEqual(extract_user_frames(""), [])
 
 
 if __name__ == "__main__":

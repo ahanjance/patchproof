@@ -1,18 +1,38 @@
-"""Part 3: git-diff parsing and change-region extraction.
+"""Part 3: diff parsing and execution-to-source frame normalization.
 
-This module is intentionally limited to parsing the patch contents into
-structured, evidence-friendly change regions. It does not decide whether a
-security issue is fixed or incomplete; that classification is implemented in
-later Part 3 steps.
+This module is intentionally limited to the evidence-collection phase of Part 3:
+parsing git diffs into changed regions and extracting user frames from crash
+reports. It does not decide whether a security issue is fixed or incomplete;
+that classification is implemented in later Part 3 steps.
 """
 
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 _HUNK_RE = re.compile(
     r"^@@ -(?P<old_start>\d+)(?:,(?P<old_count>\d+))? \+(?P<new_start>\d+)(?:,(?P<new_count>\d+))? @@(?: (?P<header>.*))?$"
+)
+
+_RUNTIME_FRAME_PREFIXES = (
+    "__asan",
+    "__interceptor",
+    "___interceptor",
+    "__sanitizer",
+    "__ubsan",
+    "__libc_start",
+    "_start",
+    "__GI_",
+    "__pthread_kill",
+    "raise",
+    "abort",
+    "__stack_chk_fail",
+    "__fortify_fail",
+    "__chk_fail",
+)
+_FRAME_RE = re.compile(
+    r"^\s*#(?P<idx>\d+)\s+(?:0x[0-9A-Fa-f]+)?(?:\s+in\s+)?(?P<func>\S+)(?:\s+\((?P<object>[^)]+)\))?(?:\s+at\s+(?P<file>.+?):(?P<line>\d+))?\s*$"
 )
 
 
@@ -53,6 +73,16 @@ class ChangedFile:
         for hunk in self.hunks:
             ranges.append(hunk.new_range)
         return ranges
+
+
+@dataclass(frozen=True)
+class NormalizedFrame:
+    """A crash stack frame after runtime frames are filtered out."""
+
+    function: str
+    file: str | None = None
+    line: int | None = None
+    raw: str = ""
 
 
 def parse_diff(diff_text: str) -> list[ChangedFile]:
@@ -142,6 +172,39 @@ def parse_diff(diff_text: str) -> list[ChangedFile]:
     flush_file()
 
     return files
+
+
+def extract_user_frames(report: str) -> list[NormalizedFrame]:
+    """Extract user stack frames from a crash report, ignoring runtime frames.
+
+    This is deliberately generic and only normalizes execution evidence. It does
+    not make any security classification decisions.
+    """
+
+    frames: list[NormalizedFrame] = []
+    for line in (report or "").splitlines():
+        match = _FRAME_RE.match(line)
+        if not match:
+            continue
+
+        function = match.group("func")
+        if function.startswith(_RUNTIME_FRAME_PREFIXES):
+            continue
+
+        file_value = match.group("file")
+        if file_value and ("libasan" in file_value or "libubsan" in file_value):
+            continue
+
+        line_value = match.group("line")
+        frames.append(
+            NormalizedFrame(
+                function=function,
+                file=file_value.strip() if file_value else None,
+                line=int(line_value) if line_value is not None else None,
+                raw=line.rstrip(),
+            )
+        )
+    return frames
 
 
 def _normalise_path(path: str) -> str:
