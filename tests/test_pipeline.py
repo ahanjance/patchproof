@@ -7,6 +7,7 @@ from pathlib import Path
 
 from helpers import BENIGN_APP, CRASH_APP, REGRESSION_APP, commit, init_repo
 
+from patchproof.analyzers.correlation import CorrelationAnalyzer
 from patchproof.config import load_config
 from patchproof.model import Finding, FindingStatus
 from patchproof.pipeline import execute
@@ -245,6 +246,24 @@ expect_exit = 0
         report = self._run(config_path, analyzers=[BrokenAnalyzer()])
         self.assertEqual(report.verdict.exit_code, 40)
         self.assertEqual(report.findings[0].status, FindingStatus.INCONCLUSIVE)
+
+    def test_correlation_analyzer_integrates_into_pipeline(self) -> None:
+        repo = self._target(BENIGN_APP, BENIGN_APP)
+        config_path = self._config(
+            repo,
+            """
+[[tests]]
+id = "valid"
+kind = "functional"
+input_mode = "stdin"
+input = "inputs/valid.txt"
+expect_exit = 0
+stdout_contains = "OK 5"
+""",
+        )
+        report = self._run(config_path, analyzers=[CorrelationAnalyzer()])
+        self.assertEqual(report.verdict.exit_code, 0)
+        self.assertTrue(all(f.analyzer != "correlation" for f in report.findings))
 
     def test_release_and_sanitized_builds_are_separate(self) -> None:
         repo = self._target(BENIGN_APP, BENIGN_APP)

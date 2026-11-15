@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import SCHEMA_VERSION, __version__
+from .analyzers.correlation import CorrelationAnalyzer
 from .analyzers.crash import CrashAnalyzer
 from .config import load_config
 from .errors import ConfigError, RepoError
@@ -118,7 +119,7 @@ def _run(
         config,
         out_root=out_root,
         keep_worktrees=keep_worktrees,
-        analyzers=[CrashAnalyzer()],
+        analyzers=[CrashAnalyzer(), CorrelationAnalyzer()],
         verbose=verbose,
     )
     data = to_jsonable(report)
