@@ -1,0 +1,6 @@
+zoo.c:25:65: runtime error: load of null pointer of type 'volatile int'
+    #0 0x555555556955 in main /w/tests/fixtures/crash/zoo.c:25
+    #1 0x7ffffe938249  (/lib/x86_64-linux-gnu/libc.so.6+0x27249)
+    #2 0x7ffffe938304 in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x27304)
+    #3 0x5555555561c0 in _start (/tmp/zoo-asan+0x21c0)
+
