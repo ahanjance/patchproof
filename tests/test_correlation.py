@@ -4,12 +4,14 @@ import unittest
 
 from patchproof.analyzers.correlation import (
     NormalizedFrame,
+    classify_patch_status,
     correlate_caller_callee,
     correlate_frames_to_diff,
     extract_user_frames,
     parse_diff,
     symbolize_frames,
 )
+from patchproof.analyzers.crash import classify_stderr
 
 
 class DiffParsingTests(unittest.TestCase):
@@ -151,6 +153,67 @@ new file mode 100644
         matches = correlate_caller_callee(parse_diff(diff), frames, caller_function="validate", callee_function="parse_header")
         self.assertEqual(len(matches), 1)
         self.assertEqual(matches[0].confidence, "caller-callee")
+
+
+class StatusClassificationTests(unittest.TestCase):
+    def test_fixed_status(self):
+        self.assertEqual(
+            classify_patch_status(base_reproduced=True, patched_reproduced=False, has_match=True),
+            "fixed",
+        )
+
+    def test_incomplete_status(self):
+        self.assertEqual(
+            classify_patch_status(base_reproduced=True, patched_reproduced=True, has_match=True),
+            "incomplete",
+        )
+
+    def test_new_status(self):
+        self.assertEqual(
+            classify_patch_status(base_reproduced=False, patched_reproduced=True, has_match=True),
+            "new",
+        )
+
+    def test_functional_regression_status(self):
+        self.assertEqual(
+            classify_patch_status(functional_regression=True, has_match=True),
+            "functional_regression",
+        )
+
+    def test_inconclusive_status(self):
+        self.assertEqual(
+            classify_patch_status(base_reproduced=True, patched_reproduced=False, has_match=False),
+            "inconclusive",
+        )
+        self.assertEqual(
+            classify_patch_status(base_reproduced=True, patched_reproduced=False, has_match=True, ambiguous=True),
+            "inconclusive",
+        )
+
+    def test_status_uses_part2_confirmed_classification(self):
+        asan = classify_stderr(
+            "==123== ERROR: AddressSanitizer: heap-buffer-overflow in src/parser.c:42\n"
+            "#0 0x111111 in parse_header at src/parser.c:42\n"
+        )
+        self.assertIsNotNone(asan)
+        self.assertEqual(
+            classify_patch_status(
+                base_reproduced=True,
+                patched_reproduced=False,
+                has_match=True,
+                classification=asan,
+            ),
+            "fixed",
+        )
+        self.assertEqual(
+            classify_patch_status(
+                base_reproduced=True,
+                patched_reproduced=False,
+                has_match=True,
+                classification=type("Weak", (), {"confirmed": False})(),
+            ),
+            "inconclusive",
+        )
 
 
 if __name__ == "__main__":

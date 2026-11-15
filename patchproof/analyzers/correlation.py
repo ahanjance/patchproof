@@ -1,9 +1,9 @@
-"""Part 3: diff parsing and execution-to-source frame normalization.
+"""Part 3: diff parsing, execution evidence and status classification.
 
-This module is intentionally limited to the evidence-collection phase of Part 3:
-parsing git diffs into changed regions and extracting user frames from crash
-reports. It does not decide whether a security issue is fixed or incomplete;
-that classification is implemented in later Part 3 steps.
+This module covers the evidence-collection and decisioning steps needed for
+Part 3: parsing git diffs, extracting user frames from crash reports,
+correlating those frames to changed code, and classifying the result as a
+patch-related status.
 """
 
 from __future__ import annotations
@@ -12,6 +12,8 @@ import re
 import shutil
 import subprocess
 from dataclasses import dataclass
+
+from .crash import Classification
 
 _HUNK_RE = re.compile(
     r"^@@ -(?P<old_start>\d+)(?:,(?P<old_count>\d+))? \+(?P<new_start>\d+)(?:,(?P<new_count>\d+))? @@(?: (?P<header>.*))?$"
@@ -433,6 +435,47 @@ def correlate_caller_callee(
                             )
                         )
     return matches
+
+
+def classify_patch_status(
+    *,
+    base_reproduced: bool = False,
+    patched_reproduced: bool = False,
+    functional_regression: bool = False,
+    has_match: bool = False,
+    ambiguous: bool = False,
+    classification: Classification | None = None,
+) -> str:
+    """Classify evidence into the five Part 3 status values.
+
+    Part 2 already classifies the crash type, mechanism and confirmation state. When
+    a confirmed crash object is supplied, its presence is treated as evidence that
+    the underlying execution was a real vulnerability signal rather than a bare
+    signal/timeout. Ambiguous or weak evidence still stays inconclusive.
+    """
+
+    if ambiguous:
+        return "inconclusive"
+
+    if classification is not None and not classification.confirmed:
+        return "inconclusive"
+
+    if functional_regression:
+        return "functional_regression"
+
+    if not has_match:
+        return "inconclusive"
+
+    if base_reproduced and patched_reproduced:
+        return "incomplete"
+
+    if base_reproduced and not patched_reproduced:
+        return "fixed"
+
+    if patched_reproduced and not base_reproduced:
+        return "new"
+
+    return "inconclusive"
 
 
 def _normalise_path(path: str) -> str:
