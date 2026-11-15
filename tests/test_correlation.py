@@ -4,6 +4,7 @@ import unittest
 
 from patchproof.analyzers.correlation import (
     NormalizedFrame,
+    correlate_caller_callee,
     correlate_frames_to_diff,
     extract_user_frames,
     parse_diff,
@@ -132,6 +133,24 @@ new file mode 100644
         self.assertEqual(len(matches), 1)
         self.assertEqual(matches[0].file, "src/parser.c")
         self.assertEqual(matches[0].confidence, "direct")
+
+    def test_correlate_caller_callee(self):
+        diff = """diff --git a/src/validate.c b/src/validate.c
+--- a/src/validate.c
++++ b/src/validate.c
+@@ -5,2 +5,3 @@
+ int validate(int len) {
+-  if (len <= 0) return 0;
++  if (len <= 0) return 1;
++  return 0;
+ }
+"""
+        frames = [
+            NormalizedFrame(function="parse_header", file="src/parser.c", line=42, raw="#0 0x1234 in parse_header at src/parser.c:42")
+        ]
+        matches = correlate_caller_callee(parse_diff(diff), frames, caller_function="validate", callee_function="parse_header")
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0].confidence, "caller-callee")
 
 
 if __name__ == "__main__":

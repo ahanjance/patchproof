@@ -373,6 +373,68 @@ def correlate_frames_to_diff(
     return matches
 
 
+def correlate_caller_callee(
+    changed_files: list[ChangedFile],
+    frames: list[NormalizedFrame],
+    *,
+    caller_function: str | None = None,
+    callee_function: str | None = None,
+) -> list[CorrelationMatch]:
+    """Handle indirect patch influence from a caller to a downstream callee.
+
+    This function models the required project case where a validation or bounds
+    check is changed in one function and a crash appears while the callee later
+    acts on bad input. Only a clear caller-to-callee relationship is treated as
+    evidence; ambiguous chains are ignored.
+    """
+
+    matches: list[CorrelationMatch] = []
+    if not changed_files or not frames:
+        return matches
+
+    if caller_function is None and callee_function is None:
+        return matches
+
+    for changed in changed_files:
+        for hunk in changed.hunks:
+            if caller_function:
+                hunk_text = "\n".join([hunk.header, *hunk.lines])
+                context_tokens = [
+                    candidate.strip().lstrip("+- ")
+                    for candidate in hunk.lines
+                    if candidate.startswith(("+", "-", " "))
+                ]
+                if caller_function not in hunk_text and not any(
+                    caller_function in token for token in context_tokens
+                ):
+                    continue
+
+                for frame in frames:
+                    if callee_function and frame.function == callee_function:
+                        matches.append(
+                            CorrelationMatch(
+                                file=changed.path,
+                                function=caller_function,
+                                line=None,
+                                range_start=hunk.new_start,
+                                range_end=hunk.new_start + max(hunk.new_count, 1) - 1,
+                                confidence="caller-callee",
+                            )
+                        )
+                    elif callee_function is None and frame.file == changed.path:
+                        matches.append(
+                            CorrelationMatch(
+                                file=changed.path,
+                                function=caller_function,
+                                line=frame.line,
+                                range_start=hunk.new_start,
+                                range_end=hunk.new_start + max(hunk.new_count, 1) - 1,
+                                confidence="caller-callee",
+                            )
+                        )
+    return matches
+
+
 def _normalise_path(path: str) -> str:
     text = path.strip()
     if text.startswith("a/") or text.startswith("b/"):
