@@ -87,6 +87,18 @@ class NormalizedFrame:
     raw: str = ""
 
 
+@dataclass(frozen=True)
+class CorrelationMatch:
+    """Evidence that a crash frame intersects a changed code region."""
+
+    file: str
+    function: str | None
+    line: int | None
+    range_start: int | None
+    range_end: int | None
+    confidence: str
+
+
 def parse_diff(diff_text: str) -> list[ChangedFile]:
     """Parse a unified git diff into a list of changed files and hunks.
 
@@ -312,6 +324,53 @@ def _apply_symbolizer_result(frame: NormalizedFrame, stdout: str) -> NormalizedF
             )
 
     return frame
+
+
+def correlate_frames_to_diff(
+    frames: list[NormalizedFrame],
+    changed_files: list[ChangedFile],
+) -> list[CorrelationMatch]:
+    """Match a normalized frame to a changed diff range using file and line info.
+
+    The logic is intentionally conservative: a direct match requires either the
+    same file and line range or the same function name and a changed hunk in that
+    function. This is still a direct correlation step, not a final status
+    decision.
+    """
+
+    matches: list[CorrelationMatch] = []
+    for frame in frames:
+        if not frame.file:
+            continue
+
+        for changed in changed_files:
+            if changed.path != frame.file:
+                continue
+            for hunk in changed.hunks:
+                if frame.line is not None and hunk.new_start <= frame.line <= hunk.new_start + max(hunk.new_count, 1) - 1:
+                    matches.append(
+                        CorrelationMatch(
+                            file=changed.path,
+                            function=frame.function,
+                            line=frame.line,
+                            range_start=hunk.new_start,
+                            range_end=hunk.new_start + max(hunk.new_count, 1) - 1,
+                            confidence="direct",
+                        )
+                    )
+                    continue
+                if frame.function and any(frame.function in line for line in hunk.lines if line.startswith(("+", "-", " "))):
+                    matches.append(
+                        CorrelationMatch(
+                            file=changed.path,
+                            function=frame.function,
+                            line=frame.line,
+                            range_start=hunk.new_start,
+                            range_end=hunk.new_start + max(hunk.new_count, 1) - 1,
+                            confidence="function-name",
+                        )
+                    )
+    return matches
 
 
 def _normalise_path(path: str) -> str:

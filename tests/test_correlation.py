@@ -4,6 +4,7 @@ import unittest
 
 from patchproof.analyzers.correlation import (
     NormalizedFrame,
+    correlate_frames_to_diff,
     extract_user_frames,
     parse_diff,
     symbolize_frames,
@@ -112,6 +113,25 @@ new file mode 100644
         frames = [NormalizedFrame(function="main", raw="#0 0x9999 in main")]
         mapped = symbolize_frames(frames, "/tmp/app", symbolizer="addr2line", runner=lambda *args, **kwargs: (_ for _ in ()).throw(OSError("missing tool")))
         self.assertEqual(mapped, frames)
+
+    def test_correlate_frames_to_diff(self):
+        diff = """diff --git a/src/parser.c b/src/parser.c
+--- a/src/parser.c
++++ b/src/parser.c
+@@ -10,3 +10,5 @@
+   if (len < 0) {
+-    return 0;
++    return 1;
++  }
++  validate(len);
+"""
+        frames = [
+            NormalizedFrame(function="parse_header", file="src/parser.c", line=12, raw="#0 0x1234 in parse_header at src/parser.c:12")
+        ]
+        matches = correlate_frames_to_diff(frames, parse_diff(diff))
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0].file, "src/parser.c")
+        self.assertEqual(matches[0].confidence, "direct")
 
 
 if __name__ == "__main__":
