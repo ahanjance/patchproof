@@ -13,6 +13,8 @@ import shutil
 import subprocess
 from dataclasses import dataclass
 
+from ..analysis import AnalysisContext
+from ..model import Finding, FindingStatus, TestObservation
 from .crash import Classification
 
 _HUNK_RE = re.compile(
@@ -476,6 +478,154 @@ def classify_patch_status(
         return "new"
 
     return "inconclusive"
+
+
+def _observation_ref(obs: TestObservation | dict | tuple[str, str, str]) -> dict[str, str]:
+    if isinstance(obs, TestObservation):
+        return {"test_id": obs.test_id, "version": obs.version, "variant": obs.variant}
+    if isinstance(obs, dict):
+        return {
+            "test_id": str(obs["test_id"]),
+            "version": str(obs["version"]),
+            "variant": str(obs["variant"]),
+        }
+    if isinstance(obs, (list, tuple)) and len(obs) == 3:
+        test_id, version, variant = obs
+        return {"test_id": str(test_id), "version": str(version), "variant": str(variant)}
+    raise TypeError(f"Unsupported observation reference: {obs!r}")
+
+
+def serialize_correlation_finding(
+    *,
+    finding_id: str,
+    title: str,
+    status: str | FindingStatus,
+    summary: str = "",
+    observations: list[TestObservation | dict | tuple[str, str, str]] | None = None,
+    matches: list[CorrelationMatch] | None = None,
+    frames: list[NormalizedFrame] | None = None,
+    diff_hunks: list[dict] | None = None,
+    kind: str = "security",
+    confirmed: bool = True,
+) -> Finding:
+    """Build a Part 3 finding with exact references to the observations used.
+
+    The verdict engine only trusts a finding when `evidence["observations"]` lists
+    the exact `(test_id, version, variant)` tuples that were used as evidence. This
+    helper centralizes that serialization contract and keeps the metadata stable
+    across Part 3 findings.
+    """
+
+    obs_refs = [_observation_ref(obs) for obs in observations or []]
+    evidence: dict[str, object] = {"observations": obs_refs}
+
+    if matches:
+        evidence["correlations"] = [
+            {
+                "file": match.file,
+                "function": match.function,
+                "line": match.line,
+                "range_start": match.range_start,
+                "range_end": match.range_end,
+                "confidence": match.confidence,
+            }
+            for match in matches
+        ]
+
+    if frames:
+        evidence["frames"] = [
+            {
+                "function": frame.function,
+                "file": frame.file,
+                "line": frame.line,
+                "raw": frame.raw,
+            }
+            for frame in frames
+        ]
+
+    if diff_hunks:
+        evidence["diff_hunks"] = diff_hunks
+
+    normalized_status = FindingStatus(status) if not isinstance(status, FindingStatus) else status
+    if not obs_refs:
+        confirmed = False
+        normalized_status = FindingStatus.INCONCLUSIVE
+
+    return Finding(
+        id=finding_id,
+        title=title,
+        status=normalized_status,
+        kind=kind,
+        confirmed=confirmed,
+        summary=summary,
+        evidence=evidence,
+        analyzer="correlation",
+    )
+
+
+class CorrelationAnalyzer:
+    """Part 3 serialization and correlation analyzer.
+
+    This class is intentionally conservative: it serializes only evidence-backed
+    findings and leaves status logic to the earlier Part 3 decision helpers.
+    """
+
+    name = "correlation"
+
+    def analyze(self, context: AnalysisContext) -> list[Finding]:
+        if not context.diff:
+            return []
+
+        findings: list[Finding] = []
+        grouped: dict[str, list[TestObservation]] = {}
+        for observation in context.observations:
+            grouped.setdefault(observation.test_id, []).append(observation)
+
+        for test_id, observations in grouped.items():
+            observations_by_version = {obs.version: obs for obs in observations}
+            base_obs = observations_by_version.get("base")
+            patched_obs = observations_by_version.get("patched")
+            if not (base_obs or patched_obs):
+                continue
+
+            refs = [_observation_ref(obs) for obs in observations]
+            diff_files = parse_diff(context.diff)
+            frames = []
+            for obs in observations:
+                frames.extend(extract_user_frames(obs.stderr or ""))
+
+            matches = correlate_frames_to_diff(frames, diff_files) if diff_files else []
+            status = "inconclusive" if not matches else "incomplete"
+            if base_obs and not patched_obs:
+                status = "fixed"
+            if patched_obs and not base_obs:
+                status = "new"
+
+            findings.append(
+                serialize_correlation_finding(
+                    finding_id=f"CORR-{test_id}",
+                    title=f"diff correlation for {test_id}",
+                    status=status,
+                    summary=(
+                        "Correlated execution evidence to the observed diff regions "
+                        "using exact observation references."
+                    ),
+                    observations=observations,
+                    matches=matches,
+                    frames=frames,
+                    diff_hunks=[
+                        {
+                            "file": changed.path,
+                            "ranges": [hunk.new_range for hunk in changed.hunks],
+                        }
+                        for changed in diff_files
+                    ],
+                    confirmed=bool(matches) or bool(base_obs and not patched_obs) or bool(patched_obs and not base_obs),
+                    kind="security",
+                )
+            )
+
+        return findings
 
 
 def _normalise_path(path: str) -> str:

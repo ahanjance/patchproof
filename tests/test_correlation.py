@@ -2,16 +2,20 @@ from __future__ import annotations
 
 import unittest
 
+from patchproof.analysis import AnalysisContext
 from patchproof.analyzers.correlation import (
+    CorrelationAnalyzer,
     NormalizedFrame,
     classify_patch_status,
     correlate_caller_callee,
     correlate_frames_to_diff,
     extract_user_frames,
     parse_diff,
+    serialize_correlation_finding,
     symbolize_frames,
 )
 from patchproof.analyzers.crash import classify_stderr
+from patchproof.model import TestObservation
 
 
 class DiffParsingTests(unittest.TestCase):
@@ -214,6 +218,117 @@ class StatusClassificationTests(unittest.TestCase):
             ),
             "inconclusive",
         )
+
+
+class SerializationTests(unittest.TestCase):
+    def test_serialize_finding_uses_exact_observation_refs(self):
+        base = TestObservation(
+            test_id="cve-1",
+            kind="security",
+            version="base",
+            variant="sanitized",
+            outcome="crash",
+            expectation_met=False,
+            exit_code=None,
+            signal=6,
+            timed_out=False,
+            duration_seconds=0.1,
+            stderr="==123== ERROR: AddressSanitizer: heap-buffer-overflow\n#0 0x1111 in parse_header at src/parser.c:42\n",
+        )
+        patched = TestObservation(
+            test_id="cve-1",
+            kind="security",
+            version="patched",
+            variant="sanitized",
+            outcome="pass",
+            expectation_met=True,
+            exit_code=0,
+            signal=None,
+            timed_out=False,
+            duration_seconds=0.1,
+        )
+
+        finding = serialize_correlation_finding(
+            finding_id="CORR-1",
+            title="heap-buffer-overflow correlation",
+            status="fixed",
+            summary="base reproduced, patched did not",
+            observations=[base, patched],
+            matches=[],
+            frames=[
+                NormalizedFrame(function="parse_header", file="src/parser.c", line=42, raw="#0 ...")
+            ],
+            diff_hunks=[{"file": "src/parser.c", "ranges": [(10, 12)]}],
+        )
+
+        self.assertEqual(
+            finding.evidence["observations"],
+            [
+                {"test_id": "cve-1", "version": "base", "variant": "sanitized"},
+                {"test_id": "cve-1", "version": "patched", "variant": "sanitized"},
+            ],
+        )
+        self.assertEqual(finding.evidence["diff_hunks"][0]["file"], "src/parser.c")
+        self.assertEqual(finding.status.value, "fixed")
+
+    def test_analyzer_serializes_multiple_findings_without_losing_metadata(self):
+        context = AnalysisContext(
+            config=None,
+            base_worktree=None,
+            patched_worktree=None,
+            diff="""diff --git a/src/parser.c b/src/parser.c
+--- a/src/parser.c
++++ b/src/parser.c
+@@ -10,2 +10,3 @@
+-  return 0;
++  return 1;
++  validate(len);
+""",
+            observations=[
+                TestObservation(
+                    test_id="bg-1",
+                    kind="security",
+                    version="base",
+                    variant="sanitized",
+                    outcome="crash",
+                    expectation_met=False,
+                    exit_code=None,
+                    signal=11,
+                    timed_out=False,
+                    duration_seconds=0.1,
+                    stderr="#0 0x1111 in parse_header at src/parser.c:11\n",
+                ),
+                TestObservation(
+                    test_id="bg-1",
+                    kind="security",
+                    version="patched",
+                    variant="sanitized",
+                    outcome="pass",
+                    expectation_met=True,
+                    exit_code=0,
+                    signal=None,
+                    timed_out=False,
+                    duration_seconds=0.1,
+                    stderr="",
+                ),
+            ],
+            out_dir=None,
+        )
+        findings = CorrelationAnalyzer().analyze(context)
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].evidence["observations"][0]["test_id"], "bg-1")
+        self.assertEqual(findings[0].evidence["diff_hunks"][0]["file"], "src/parser.c")
+
+    def test_missing_observation_refs_keep_result_inconclusive(self):
+        finding = serialize_correlation_finding(
+            finding_id="CORR-2",
+            title="incomplete evidence",
+            status="fixed",
+            summary="weak evidence",
+            observations=[],
+        )
+        self.assertFalse(finding.confirmed)
+        self.assertEqual(finding.status, type(finding.status)("inconclusive"))
 
 
 if __name__ == "__main__":
