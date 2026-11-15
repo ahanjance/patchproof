@@ -1,0 +1,50 @@
+=================================================================
+==17==ERROR: AddressSanitizer: stack-buffer-overflow on address 0x7ffffffcaac8 at pc 0x7fffff1852ca bp 0x7ffffffcaa80 sp 0x7ffffffca230
+WRITE of size 45 at 0x7ffffffcaac8 thread T0
+    #0 0x7fffff1852c9 in __interceptor_strcpy ../../../../src/libsanitizer/asan/asan_interceptors.cpp:425
+    #1 0x555555556329 in stack_overflow /w/tests/fixtures/crash/zoo.c:11
+    #2 0x555555556577 in main /w/tests/fixtures/crash/zoo.c:20
+    #3 0x7ffffe938249  (/lib/x86_64-linux-gnu/libc.so.6+0x27249)
+    #4 0x7ffffe938304 in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x27304)
+    #5 0x5555555561c0 in _start (/tmp/zoo-asan+0x21c0)
+
+Address 0x7ffffffcaac8 is located in stack of thread T0 at offset 40 in frame
+    #0 0x555555556298 in stack_overflow /w/tests/fixtures/crash/zoo.c:9
+
+  This frame has 1 object(s):
+    [32, 40) 'buf' (line 10) <== Memory access at offset 40 overflows this variable
+HINT: this may be a false positive if your program uses some custom stack unwind mechanism, swapcontext or vfork
+      (longjmp and C++ exceptions *are* supported)
+SUMMARY: AddressSanitizer: stack-buffer-overflow ../../../../src/libsanitizer/asan/asan_interceptors.cpp:425 in __interceptor_strcpy
+Shadow bytes around the buggy address:
+  0x10007fff1500: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x10007fff1510: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x10007fff1520: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x10007fff1530: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x10007fff1540: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+=>0x10007fff1550: 00 00 00 00 f1 f1 f1 f1 00[f3]f3 f3 00 00 00 00
+  0x10007fff1560: 00 00 00 00 00 00 00 00 00 00 f1 f1 f1 f1 04 f3
+  0x10007fff1570: f3 f3 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x10007fff1580: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x10007fff1590: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x10007fff15a0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+Shadow byte legend (one shadow byte represents 8 application bytes):
+  Addressable:           00
+  Partially addressable: 01 02 03 04 05 06 07 
+  Heap left redzone:       fa
+  Freed heap region:       fd
+  Stack left redzone:      f1
+  Stack mid redzone:       f2
+  Stack right redzone:     f3
+  Stack after return:      f5
+  Stack use after scope:   f8
+  Global redzone:          f9
+  Global init order:       f6
+  Poisoned by user:        f7
+  Container overflow:      fc
+  Array cookie:            ac
+  Intra object redzone:    bb
+  ASan internal:           fe
+  Left alloca redzone:     ca
+  Right alloca redzone:    cb
+==17==ABORTING
