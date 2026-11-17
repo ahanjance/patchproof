@@ -15,7 +15,7 @@ from dataclasses import dataclass
 
 from ..analysis import AnalysisContext
 from ..model import Finding, FindingStatus, TestObservation
-from .crash import Classification
+from .crash import Classification, classify
 
 _HUNK_RE = re.compile(
     r"^@@ -(?P<old_start>\d+)(?:,(?P<old_count>\d+))? \+(?P<new_start>\d+)(?:,(?P<new_count>\d+))? @@(?: (?P<header>.*))?$"
@@ -38,7 +38,7 @@ _RUNTIME_FRAME_PREFIXES = (
     "__chk_fail",
 )
 _FRAME_RE = re.compile(
-    r"^\s*#(?P<idx>\d+)\s+(?:0x[0-9A-Fa-f]+)?(?:\s+in\s+)?(?P<func>\S+)(?:\s+\((?P<object>[^)]+)\))?(?:\s+at\s+(?P<file>.+?):(?P<line>\d+))?\s*$"
+    r"^\s*#(?P<idx>\d+)\s+(?:0x[0-9A-Fa-f]+)?(?:\s+in\s+)?(?P<func>\S+)(?:\s+\((?P<object>[^)]+)\))?(?:\s+(?:at\s+)?(?P<file>[^\s()]+?):(?P<line>\d+)(?::\d+)?)?\s*$"
 )
 
 
@@ -333,6 +333,7 @@ def _apply_symbolizer_result(frame: NormalizedFrame, stdout: str) -> NormalizedF
 def correlate_frames_to_diff(
     frames: list[NormalizedFrame],
     changed_files: list[ChangedFile],
+    side: str = "new",
 ) -> list[CorrelationMatch]:
     """Match a normalized frame to a changed diff range using file and line info.
 
@@ -348,17 +349,20 @@ def correlate_frames_to_diff(
             continue
 
         for changed in changed_files:
-            if changed.path != frame.file:
+            # Frames carry the worktree's absolute path; the diff is repo-relative.
+            if frame.file != changed.path and not frame.file.endswith("/" + changed.path):
                 continue
             for hunk in changed.hunks:
-                if frame.line is not None and hunk.new_start <= frame.line <= hunk.new_start + max(hunk.new_count, 1) - 1:
+                # A base crash has base line numbers, so it is compared to the old side.
+                start, end = hunk.old_range if side == "old" else hunk.new_range
+                if frame.line is not None and start <= frame.line <= end:
                     matches.append(
                         CorrelationMatch(
                             file=changed.path,
                             function=frame.function,
                             line=frame.line,
-                            range_start=hunk.new_start,
-                            range_end=hunk.new_start + max(hunk.new_count, 1) - 1,
+                            range_start=start,
+                            range_end=end,
                             confidence="direct",
                         )
                     )
@@ -585,52 +589,58 @@ class CorrelationAnalyzer:
         for observation in relevant:
             grouped.setdefault(observation.test_id, []).append(observation)
 
+        diff_files = parse_diff(context.diff)
         for test_id, observations in grouped.items():
-            if not any(obs.outcome in {"crash", "timeout", "error"} for obs in observations):
+            # Same notion of "reproduced" as Part 2, so UBSan exits without a signal count.
+            hits = [obs for obs in observations if classify(obs, obs.stderr or "")]
+            base_hit = any(obs.version == "base" for obs in hits)
+            patched_hit = any(obs.version == "patched" for obs in hits)
+            if not hits:
                 continue
 
-            observations_by_version = {obs.version: obs for obs in observations}
-            base_obs = observations_by_version.get("base")
-            patched_obs = observations_by_version.get("patched")
-            if not (base_obs or patched_obs):
-                continue
-
-            refs = [_observation_ref(obs) for obs in observations]
-            diff_files = parse_diff(context.diff)
             frames = []
-            for obs in observations:
-                frames.extend(extract_user_frames(obs.stderr or ""))
+            matches = []
+            for obs in hits:
+                obs_frames = extract_user_frames(obs.stderr or "")
+                frames.extend(obs_frames)
+                side = "old" if obs.version == "base" else "new"
+                matches.extend(correlate_frames_to_diff(obs_frames, diff_files, side=side))
 
-            matches = correlate_frames_to_diff(frames, diff_files) if diff_files else []
-            status = "inconclusive" if not matches else "incomplete"
-            if base_obs and not patched_obs:
+            if base_hit and patched_hit:
+                status = "incomplete"
+            elif base_hit:
                 status = "fixed"
-            if patched_obs and not base_obs:
+            else:
                 status = "new"
+            # Statement 3.1: without enough evidence the *link* is unknown; the
+            # reproduction status still comes from execution on both versions.
+            link = "direct" if matches else "unknown"
 
-            findings.append(
-                serialize_correlation_finding(
-                    finding_id=f"CORR-{test_id}",
-                    title=f"diff correlation for {test_id}",
-                    status=status,
-                    summary=(
-                        "Correlated execution evidence to the observed diff regions "
-                        "using exact observation references."
-                    ),
-                    observations=observations,
-                    matches=matches,
-                    frames=frames,
-                    diff_hunks=[
-                        {
-                            "file": changed.path,
-                            "ranges": [hunk.new_range for hunk in changed.hunks],
-                        }
-                        for changed in diff_files
-                    ],
-                    confirmed=bool(matches) or bool(base_obs and not patched_obs) or bool(patched_obs and not base_obs),
-                    kind="security",
-                )
+            finding = serialize_correlation_finding(
+                finding_id=f"CORR-{test_id}",
+                title=f"diff correlation for {test_id}: link {link}",
+                status=status,
+                summary=(
+                    f"reproduced on {'base' if base_hit else ''}"
+                    f"{' and ' if base_hit and patched_hit else ''}{'patched' if patched_hit else ''}; "
+                    + (f"{len(matches)} frame(s) fall in changed hunks" if matches
+                       else "no crash frame falls in a changed hunk, link unknown")
+                ),
+                observations=observations,
+                matches=matches,
+                frames=frames,
+                diff_hunks=[
+                    {
+                        "file": changed.path,
+                        "ranges": [hunk.new_range for hunk in changed.hunks],
+                    }
+                    for changed in diff_files
+                ],
+                confirmed=True,
+                kind="security",
             )
+            finding.evidence["link"] = link
+            findings.append(finding)
 
         return findings
 

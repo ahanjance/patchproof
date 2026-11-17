@@ -49,6 +49,13 @@ Some bugs are explained by a caller-side guard or validation change that lets in
 
 If the link is weak or ambiguous, the result must remain inconclusive instead of being guessed.
 
+In the analyzer this is `evidence.link`: `direct` when a crash frame falls in a
+changed hunk (base frames against the old side, patched frames against the new
+side), otherwise `unknown`. An unknown link is reported, not guessed, but it does
+not by itself make the run inconclusive: the status still comes from whether the
+error reproduced on base and on patched (statement 3.1). Crashes that Part 2
+cannot confirm already force exit 40 through the crash analyzer.
+
 ## Evidence contract
 
 Every finding must keep exact observation references in its evidence:
