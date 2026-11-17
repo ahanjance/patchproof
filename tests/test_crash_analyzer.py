@@ -10,6 +10,7 @@ from pathlib import Path
 from helpers import commit, init_repo
 
 from patchproof.analysis import AnalysisContext
+from patchproof.analyzers.correlation import CorrelationAnalyzer
 from patchproof.analyzers.crash import CrashAnalyzer, classify, classify_stderr
 from patchproof.config import load_config
 from patchproof.model import FindingStatus, TestObservation
@@ -168,6 +169,8 @@ int main(void) {
 """
 INCOMPLETE = VULN.replace("memcpy(buf, line, n);", "if (n == 32) return 2;\n    memcpy(buf, line, n);")
 CORRECT = VULN.replace("memcpy(buf, line, n);", "if (n > 8) return 2;\n    memcpy(buf, line, n);")
+# Blocks the overflow but also rejects the valid 3-byte input.
+REGRESSION = VULN.replace("memcpy(buf, line, n);", "if (n > 2) return 2;\n    memcpy(buf, line, n);")
 
 
 @unittest.skipUnless(platform.system() == "Linux" and shutil.which("cc"), "needs Linux + cc with ASan")
@@ -213,17 +216,23 @@ id = "bypass"
 kind = "security"
 input = "bypass.txt"
 """)
-        return execute(load_config(config), out_root=self.root / "out", analyzers=[CrashAnalyzer()])
+        return execute(load_config(config), out_root=self.root / "out", analyzers=[CrashAnalyzer(), CorrelationAnalyzer()])  # same list as the CLI
 
     def test_incomplete_patch_exits_10(self):
         report = self.run_patch(INCOMPLETE)
         self.assertEqual(report.verdict.exit_code, 10, report.verdict.reasons)
         self.assertIn(FindingStatus.INCOMPLETE, [f.status for f in report.findings])
+        links = {f.evidence["link"] for f in report.findings if f.analyzer == "correlation"}
+        self.assertEqual(links, {"direct"})
 
     def test_correct_patch_exits_0(self):
         report = self.run_patch(CORRECT)
         self.assertEqual(report.verdict.exit_code, 0, report.verdict.reasons)
         self.assertEqual({f.status for f in report.findings}, {FindingStatus.FIXED})
+
+    def test_regression_patch_exits_20(self):
+        report = self.run_patch(REGRESSION)
+        self.assertEqual(report.verdict.exit_code, 20, report.verdict.reasons)
 
 
 if __name__ == "__main__":

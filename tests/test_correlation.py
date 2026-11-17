@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 
 from patchproof.analysis import AnalysisContext
 from patchproof.analyzers.correlation import (
@@ -90,6 +91,16 @@ new file mode 100644
         self.assertEqual([f.function for f in frames], ["parse_header", "main"])
         self.assertEqual(frames[0].line, 42)
         self.assertEqual(frames[1].file, "src/main.c")
+
+    def test_extract_user_frames_reads_real_asan_paths(self):
+        # Real gcc ASan output: "in func /abs/path/file.c:line", no "at".
+        report = (Path(__file__).parent / "fixtures" / "crash" / "asan-stack.txt").read_text()
+        frames = extract_user_frames(report)
+        self.assertEqual(frames[0].function, "stack_overflow")
+        self.assertTrue(frames[0].file.endswith("zoo.c"))
+        self.assertEqual(frames[0].line, 11)
+        changed = parse_diff("--- a/tests/fixtures/crash/zoo.c\n+++ b/tests/fixtures/crash/zoo.c\n@@ -11 +11 @@\n-x\n+y\n")
+        self.assertEqual(len(correlate_frames_to_diff(frames[:1], changed, side="old")), 1)
 
     def test_extract_user_frames_handles_blank_report(self):
         self.assertEqual(extract_user_frames(""), [])
